@@ -1,0 +1,53 @@
+{
+  "version": "v2",
+  "n_original": 500,
+  "n_augmented": 300,
+  "n_total": 800,
+  "metrics": {
+    "std_test_lcom_r2": 0.9720695267143722,
+    "std_test_lcom_rmse": 12.411597755685818,
+    "std_test_util_r2": 0.9987184995652088,
+    "std_test_util_rmse": 0.0016174253618363034,
+    "agent_region_lcom_r2": 0.9987895620562305,
+    "agent_region_lcom_rmse": 187.59905914852533,
+    "agent_region_util_r2": 0.9998480451123408,
+    "agent_region_util_rmse": 0.00040972888938845215
+  },
+  "bounds_original": [
+    [
+      210.0,
+      280.0
+    ],
+    [
+      50.0,
+      100.0
+    ],
+    [
+      0.003,
+      0.1
+    ],
+    [
+      2515.0,
+      3147.0
+    ],
+    [
+      1.0,
+      3.0
+    ]
+  ],
+  "X_mu": [
+    253.51048351474,
+    75.82759364919211,
+    0.05150327176873039,
+    2020.0780143459654,
+    2.000005352058707
+  ],
+  "X_sig": [
+    22.26666852586379,
+    13.419722725294413,
+    0.028007095590025954,
+    1160.9002743865467,
+    0.5773489442303108
+  ],
+  "note": "Augmented training set includes pseudo-labels from the simplified process model (NOT Aspen). The agent-region points smooth the GPR surface but cannot correct systematic bias in the analytical model."
+}

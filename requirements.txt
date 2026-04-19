@@ -1,0 +1,13 @@
+# RL Dynamic Control — CO₂-to-Methanol Plant
+# Install:  pip install -r requirements.txt
+
+gymnasium>=0.29.0
+numpy>=1.24
+pandas>=2.0
+matplotlib>=3.7
+scikit-learn>=1.3
+scipy>=1.10              # LHS sampling, convex hull, GPR kernels
+stable-baselines3[extra]>=2.2
+tensorboard>=2.14
+seaborn>=0.13
+requests>=2.31           # ENTSO-E REST client (optional)
