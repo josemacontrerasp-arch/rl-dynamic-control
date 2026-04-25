@@ -1,0 +1,34 @@
+[
+  {
+    "baseline": "A",
+    "name": "design-only",
+    "in_dim": 36,
+    "hidden_dim": 128,
+    "n_hidden_layers": 3,
+    "best_val_loss": 0.5811161398887634,
+    "final_epoch": 40,
+    "wall_time_s": 10.24605,
+    "test_r2_TAC": 0.08685112391547523,
+    "test_mae_TAC": 1346584.9866666666,
+    "test_r2_carbon_eff": 0.44140428612020643,
+    "test_mae_carbon_eff": 0.034774058262507124,
+    "test_r2_LCOM": 0.7811913337131099,
+    "test_mae_LCOM": 16.24607462565104
+  },
+  {
+    "baseline": "B",
+    "name": "design + edge-flat",
+    "in_dim": 166,
+    "hidden_dim": 128,
+    "n_hidden_layers": 3,
+    "best_val_loss": 0.030988549813628197,
+    "final_epoch": 106,
+    "wall_time_s": 76.8859614,
+    "test_r2_TAC": 0.9935504261982375,
+    "test_mae_TAC": 125416.93333333333,
+    "test_r2_carbon_eff": 0.988191909594971,
+    "test_mae_carbon_eff": 0.0050657164057095845,
+    "test_r2_LCOM": 0.9247925991669513,
+    "test_mae_LCOM": 8.417258911132812
+  }
+]

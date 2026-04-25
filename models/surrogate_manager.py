@@ -2,15 +2,17 @@
 Surrogate Version Manager
 =========================
 Version-aware loader for GPR surrogates.  Supports ``v1`` (original
-500-point LHS) and ``v2`` (augmented with agent-trajectory data).
+500-point LHS), ``v2`` (augmented with agent-trajectory data), and
+``v3`` (LCOM/util retrained with extended F_H2 coverage).
 
 Usage::
 
     from rl_dynamic_control.models.surrogate_manager import load_surrogates
 
     surrogates = load_surrogates(version="v2")   # prefer v2
+    surrogates = load_surrogates(version="v3")   # force v3
     surrogates = load_surrogates(version="v1")   # force original
-    surrogates = load_surrogates(version="auto")  # v2 if available, else v1
+    surrogates = load_surrogates(version="auto")  # newest available, else v1
 """
 
 from __future__ import annotations
@@ -27,14 +29,33 @@ LOGGER = logging.getLogger("surrogate_manager")
 _RL_DIR = Path(__file__).resolve().parent.parent
 _SAVED_MODELS = _RL_DIR / "saved_models"
 _V2_DIR = _SAVED_MODELS / "surrogates_v2"
+_V3_DIR = _SAVED_MODELS / "surrogates_v3"
 
-# Minimum files required for a valid v2 installation
-_V2_REQUIRED = ["gp_meoh_output.pkl", "gp_lcom_5d.pkl", "gp_util_5d.pkl"]
+# Minimum files required for a valid versioned installation
+_VERSION_REQUIRED = ["gp_meoh_output.pkl", "gp_lcom_5d.pkl", "gp_util_5d.pkl"]
+
+
+def _version_dir(version: str) -> Path:
+    if version == "v2":
+        return _V2_DIR
+    if version == "v3":
+        return _V3_DIR
+    raise ValueError(f"Unsupported versioned surrogate directory: {version!r}")
+
+
+def _version_available(version: str) -> bool:
+    model_dir = _version_dir(version)
+    return all((model_dir / f).exists() for f in _VERSION_REQUIRED)
 
 
 def v2_available() -> bool:
     """Check whether v2 surrogates exist on disk."""
-    return all((_V2_DIR / f).exists() for f in _V2_REQUIRED)
+    return _version_available("v2")
+
+
+def v3_available() -> bool:
+    """Check whether v3 surrogates exist on disk."""
+    return _version_available("v3")
 
 
 def load_surrogates(
@@ -48,7 +69,8 @@ def load_surrogates(
     version : str
         ``"v1"`` — original surrogates from ``saved_models/``.
         ``"v2"`` — augmented surrogates from ``saved_models/surrogates_v2/``.
-        ``"auto"`` — v2 if available, otherwise v1.
+        ``"v3"`` — retrained surrogates from ``saved_models/surrogates_v3/``.
+        ``"auto"`` — newest available version, otherwise v1.
     use_gpr : bool
         If False, use analytical fallback regardless of version.
 
@@ -58,8 +80,24 @@ def load_surrogates(
         Configured surrogate instance.
     """
     if version == "auto":
-        version = "v2" if v2_available() else "v1"
+        if v3_available():
+            version = "v3"
+        elif v2_available():
+            version = "v2"
+        else:
+            version = "v1"
         LOGGER.info("Auto-selected surrogate version: %s", version)
+
+    if version == "v3":
+        if not v3_available():
+            LOGGER.warning(
+                "v3 surrogates not found at %s — falling back to v2/v1.",
+                _V3_DIR,
+            )
+            if v2_available():
+                return _load_versioned("v2", use_gpr)
+            return _load_v1(use_gpr)
+        return _load_versioned("v3", use_gpr)
 
     if version == "v2":
         if not v2_available():
@@ -69,12 +107,14 @@ def load_surrogates(
                 _V2_DIR,
             )
             return _load_v1(use_gpr)
-        return _load_v2(use_gpr)
+        return _load_versioned("v2", use_gpr)
 
     if version == "v1":
         return _load_v1(use_gpr)
 
-    raise ValueError(f"Unknown surrogate version: {version!r}. Use 'v1', 'v2', or 'auto'.")
+    raise ValueError(
+        f"Unknown surrogate version: {version!r}. Use 'v1', 'v2', 'v3', or 'auto'."
+    )
 
 
 def _load_v1(use_gpr: bool) -> PlantSurrogates:
@@ -85,12 +125,13 @@ def _load_v1(use_gpr: bool) -> PlantSurrogates:
     return surr
 
 
-def _load_v2(use_gpr: bool) -> PlantSurrogates:
-    """Load v2 surrogates from the versioned directory."""
-    LOGGER.info("Loading v2 surrogates from %s", _V2_DIR)
+def _load_versioned(version: str, use_gpr: bool) -> PlantSurrogates:
+    """Load versioned surrogates from their dedicated directory."""
+    model_dir = _version_dir(version)
+    LOGGER.info("Loading %s surrogates from %s", version, model_dir)
 
     surr = PlantSurrogates(use_gpr=False)  # skip default loading
-    surr._surrogate_version = "v2"
+    surr._surrogate_version = version
 
     if not use_gpr:
         LOGGER.info("GPR disabled — using analytical fallback")
@@ -107,7 +148,7 @@ def _load_v2(use_gpr: bool) -> PlantSurrogates:
     }
 
     for fname, attr in expected.items():
-        path = _V2_DIR / fname
+        path = model_dir / fname
         if path.exists():
             with open(path, "rb") as f:
                 data = pickle.load(f)
@@ -125,9 +166,11 @@ def _load_v2(use_gpr: bool) -> PlantSurrogates:
 
     if loaded >= 3:
         surr._gpr_loaded = True
-        LOGGER.info("Loaded %d v2 GPR models", loaded)
+        LOGGER.info("Loaded %d %s GPR models", loaded, version)
     else:
-        LOGGER.warning("Only %d v2 models found — falling back to analytical", loaded)
+        LOGGER.warning(
+            "Only %d %s models found — falling back to analytical", loaded, version
+        )
         surr._gpr_loaded = False
 
     # Re-estimate training sigma for the new model

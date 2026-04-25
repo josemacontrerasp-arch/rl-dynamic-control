@@ -1,0 +1,2 @@
+experiment,hidden_dim,n_layers,dropout,best_val_loss,final_epoch,wall_time_s,n_pred_prod_nonpositive,test_r2_TAC,test_mae_TAC,test_r2_carbon_eff,test_mae_carbon_eff,test_r2_production,test_mae_production,test_r2_LCOM_derived,test_mae_LCOM_derived
+target_swap,64,2,0.0,0.21885308186213176,195,408.07395970000005,0,0.9945426685785931,118272.08,0.8962819112206333,0.015258235037326812,0.5153624816539861,2533.939642478403,0.2103875970739817,33.663244832356774

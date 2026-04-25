@@ -1,0 +1,34 @@
+[
+  {
+    "experiment": "w1_1_3",
+    "weights_TAC": 1.0,
+    "weights_carbon": 1.0,
+    "weights_LCOM": 3.0,
+    "best_val_loss": 0.49946819941202797,
+    "final_epoch": 116,
+    "wall_time_s": 250.5192118,
+    "test_mse_norm": 0.3449339930216471,
+    "test_mae_TAC": 229465.46875,
+    "test_r2_TAC": 0.9780881084679461,
+    "test_mae_carbon_eff": 0.015504259616136551,
+    "test_r2_carbon_eff": 0.8871449805178767,
+    "test_mae_LCOM": 33.6315803527832,
+    "test_r2_LCOM": 0.2131367839691618
+  },
+  {
+    "experiment": "w1_1_10",
+    "weights_TAC": 1.0,
+    "weights_carbon": 1.0,
+    "weights_LCOM": 10.0,
+    "best_val_loss": 0.6683125082651774,
+    "final_epoch": 149,
+    "wall_time_s": 303.56893529999996,
+    "test_mse_norm": 0.33480203416612414,
+    "test_mae_TAC": 284430.09375,
+    "test_r2_TAC": 0.9674588613332747,
+    "test_mae_carbon_eff": 0.01552644744515419,
+    "test_r2_carbon_eff": 0.8913649278546865,
+    "test_mae_LCOM": 32.992366790771484,
+    "test_r2_LCOM": 0.24649941863898628
+  }
+]

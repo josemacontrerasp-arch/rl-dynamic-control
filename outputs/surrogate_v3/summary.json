@@ -1,0 +1,62 @@
+{
+  "v3_dir": "C:\\Users\\Josem\\Downloads\\EURECHA\\rl_dynamic_control\\saved_models\\surrogates_v3",
+  "dataset_path": "C:\\Users\\Josem\\Downloads\\EURECHA\\rl_dynamic_control\\outputs\\surrogate_v3\\surrogates_v3_dataset.npz",
+  "metrics": {
+    "test_lcom_r2": 0.9998094187260992,
+    "test_lcom_rmse": 0.982839296417072,
+    "test_util_r2": 0.9993618979825794,
+    "test_util_rmse": 0.0011297168739477037
+  },
+  "evaluation": {
+    "model_path": "rl_dynamic_control\\saved_models\\sac_extrap_fix_c.zip",
+    "episodes": 20,
+    "mean_reward": -161.63424279432738,
+    "std_reward": 6.436036109361605,
+    "mean_extrapolation_rate": 0.0,
+    "std_extrapolation_rate": 0.0,
+    "episode_rewards": [
+      -165.97196115236596,
+      -153.35689913087293,
+      -160.43620533049926,
+      -162.77391227733472,
+      -157.77822261856954,
+      -157.41025718737095,
+      -168.9480578817066,
+      -169.95599701517614,
+      -154.36779612831128,
+      -160.55652893891354,
+      -171.34600450600527,
+      -161.06797926739614,
+      -157.3602916945818,
+      -154.6194257218175,
+      -164.72297458906684,
+      -173.53425712767108,
+      -150.14382556474084,
+      -161.4339952869952,
+      -169.65662578818456,
+      -157.2436386789672
+    ],
+    "episode_extrapolation_rates": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ]
+  }
+}

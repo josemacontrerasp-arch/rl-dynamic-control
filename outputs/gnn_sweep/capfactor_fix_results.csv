@@ -1,0 +1,2 @@
+experiment,hidden_dim,n_layers,dropout,cap_range,best_val_loss,final_epoch,wall_time_s,test_mse_norm,test_mae_TAC,test_r2_TAC,test_mae_carbon_eff,test_r2_carbon_eff,test_mae_LCOM,test_r2_LCOM
+capfactor_fix,64,2,0.0,"[0.93, 1.0]",0.28660020112991336,171,634.887116,0.293582280476888,157900.109375,0.9910127772167965,0.017470475286245346,0.8936665579156999,37.4185791015625,0.37504310735552837

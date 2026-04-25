@@ -29,9 +29,15 @@ from ..config import (
 )
 from ..models.surrogates import PlantSurrogates
 from ..utils.reward import compute_reward, RewardConfig
+from ..utils.reward import compute_electricity_consumption_mwh, compute_electricity_cost
 from ..utils.variance_penalty import (
     VariancePenaltyConfig,
     compute_variance_penalty,
+)
+from ..utils.gnn_confidence import (
+    GNNConfidenceEstimator,
+    GNNPenaltyConfig,
+    compute_gnn_penalty,
 )
 
 
@@ -81,9 +87,13 @@ class MethanolPlantEnv(gym.Env):
         price_dataset: Optional[str] = None,
         lambda_profit: float = 1.0,
         lambda_co2: float = 0.0,
+        lambda_elec: float = 0.0,
         gpr_warn_sigma_mult: float = 2.0,
         use_variance_penalty: bool = False,
         variance_penalty_config: Optional[VariancePenaltyConfig] = None,
+        use_gnn_penalty: bool = False,
+        gnn_penalty_config: Optional[GNNPenaltyConfig] = None,
+        gnn_confidence_estimator: Optional[GNNConfidenceEstimator] = None,
     ) -> None:
         """
         Parameters
@@ -95,9 +105,10 @@ class MethanolPlantEnv(gym.Env):
             Name of a dataset to pull from ``rl_dynamic_control.data.PriceLoader``
             (e.g. ``"entso_nl_2023"``, ``"synthetic_gb"``).  Allows switching
             price series without any other code changes.
-        lambda_profit, lambda_co2 : float
+        lambda_profit, lambda_co2, lambda_elec : float
             Multi-objective scalarisation weights.  The reward becomes
-            ``λ_profit * profit + λ_co2 * co2_utilisation_component``.
+            ``lambda_profit * profit + lambda_co2 * co2_utilisation_component
+            - lambda_elec * electricity_cost``.
             Default (1,0) reproduces the original profit-only reward.
         gpr_warn_sigma_mult : float
             Multiplier on the training-set std used to flag GPR
@@ -109,6 +120,14 @@ class MethanolPlantEnv(gym.Env):
         variance_penalty_config : VariancePenaltyConfig, optional
             Configuration for the variance penalty.  If None and
             ``use_variance_penalty`` is True, uses default config.
+        use_gnn_penalty : bool
+            If True, apply the edge-state GNN uncertainty penalty to the
+            reward.  Off by default to preserve backward compatibility.
+        gnn_penalty_config : GNNPenaltyConfig, optional
+            Configuration for the GNN penalty.  If None and
+            ``use_gnn_penalty`` is True, uses default config.
+        gnn_confidence_estimator : GNNConfidenceEstimator, optional
+            Pre-loaded estimator, useful for tests or shared model reuse.
         """
         super().__init__()
         # ---- Price data source ------------------------------------------
@@ -175,6 +194,7 @@ class MethanolPlantEnv(gym.Env):
         # Multi-objective weights
         self.lambda_profit = float(lambda_profit)
         self.lambda_co2 = float(lambda_co2)
+        self.lambda_elec = float(lambda_elec)
 
         # GPR extrapolation monitoring
         self.gpr_warn_sigma_mult = float(gpr_warn_sigma_mult)
@@ -191,6 +211,21 @@ class MethanolPlantEnv(gym.Env):
         else:
             self._var_penalty_cfg = VariancePenaltyConfig(enabled=False)
         self._cumulative_var_penalty = 0.0
+
+        # Edge-state GNN uncertainty penalty
+        self.use_gnn_penalty = use_gnn_penalty
+        if use_gnn_penalty:
+            self._gnn_penalty_cfg = gnn_penalty_config or GNNPenaltyConfig()
+            self._gnn_confidence = (
+                gnn_confidence_estimator
+                or GNNConfidenceEstimator(self._gnn_penalty_cfg)
+            )
+            # Fail early if the checkpoint/dependencies are unavailable.
+            self._gnn_confidence.load()
+        else:
+            self._gnn_penalty_cfg = GNNPenaltyConfig(enabled=False)
+            self._gnn_confidence = None
+        self._cumulative_gnn_penalty = 0.0
 
     # ------------------------------------------------------------------
     # Gymnasium API
@@ -215,6 +250,7 @@ class MethanolPlantEnv(gym.Env):
         self._co2_utilisation_sum = 0.0
         self._co2_utilisation_n = 0
         self._cumulative_var_penalty = 0.0
+        self._cumulative_gnn_penalty = 0.0
 
         pb = PLANT_BOUNDS
 
@@ -293,6 +329,12 @@ class MethanolPlantEnv(gym.Env):
             constraint_violations=constraint_violations,
             config=self.reward_cfg,
         )
+        elec_cost_reward = compute_electricity_cost(
+            elec_mw=elec_mw,
+            elec_price=price,
+            config=self.reward_cfg,
+        )
+        elec_consumption_mwh = compute_electricity_consumption_mwh(elec_mw)
 
         # CO₂ utilisation component: fraction of available CO₂ (fresh feed,
         # CO2_FEED_TPH t/hr) actually converted to methanol in this step.
@@ -303,7 +345,8 @@ class MethanolPlantEnv(gym.Env):
         self._co2_utilisation_n += 1
 
         reward_before_penalty = (self.lambda_profit * profit_reward
-                                + self.lambda_co2 * co2_utilisation)
+                                + self.lambda_co2 * co2_utilisation
+                                - self.lambda_elec * elec_cost_reward)
 
         # --- Variance penalty (Approach B) --------------------------------
         var_penalty = 0.0
@@ -316,7 +359,23 @@ class MethanolPlantEnv(gym.Env):
             var_penalty *= self.reward_cfg.reward_scale
         self._cumulative_var_penalty += var_penalty
 
-        reward = reward_before_penalty - var_penalty
+        # --- Edge-state GNN uncertainty penalty --------------------------
+        gnn_penalty = 0.0
+        gnn_uncertainty = 0.0
+        gnn_confidence = 1.0
+        if self.use_gnn_penalty and self._gnn_penalty_cfg.enabled:
+            gnn_penalty, gnn_uncertainty, gnn_confidence = compute_gnn_penalty(
+                load=load,
+                T=T,
+                P=P,
+                config=self._gnn_penalty_cfg,
+                estimator=self._gnn_confidence,
+            )
+        self._cumulative_gnn_penalty += gnn_penalty
+
+        reward = reward_before_penalty - var_penalty - gnn_penalty
+        if not np.isfinite(reward):
+            reward = float(self.reward_cfg.constraint_penalty * self.reward_cfg.reward_scale)
 
         self._cumulative_profit += profit_reward
         self._prev_load = load
@@ -347,6 +406,8 @@ class MethanolPlantEnv(gym.Env):
             "reward": reward,
             "reward_before_penalty": reward_before_penalty,
             "profit_reward": profit_reward,
+            "elec_cost_reward": elec_cost_reward,
+            "elec_consumption_mwh": elec_consumption_mwh,
             "co2_utilisation": co2_utilisation,
             "cumulative_profit": self._cumulative_profit,
             "gpr_extrapolation_frac": (
@@ -355,6 +416,10 @@ class MethanolPlantEnv(gym.Env):
             "gpr_sigma": gpr_sigma_val,
             "variance_penalty": var_penalty,
             "cumulative_var_penalty": self._cumulative_var_penalty,
+            "gnn_uncertainty": gnn_uncertainty,
+            "gnn_confidence": gnn_confidence,
+            "gnn_penalty": gnn_penalty,
+            "cumulative_gnn_penalty": self._cumulative_gnn_penalty,
         })
 
         return obs, reward, terminated, truncated, info

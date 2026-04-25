@@ -260,7 +260,24 @@ class PlantSurrogates:
         """
         h2_kg_hr = self.predict_h2_production(load_fraction)
         h2_kmol_hr = h2_kg_hr / MW_H2
-        meoh_tph = self.predict_methanol_output(h2_kmol_hr, T_C, P_bar)
+
+        # The MeOH surrogate was trained on reactor-feed H2 values clustered
+        # near the Aspen base case, while the electrolyser model exposes a
+        # broader load-fraction control. When we pass the raw electrolyser
+        # production straight through, most points clip to the same surrogate
+        # lower bound and flatten the policy signal. Use the surrogate around
+        # its trained domain for temperature/pressure sensitivity, then scale
+        # throughput by the actual H2 available from the electrolyser load.
+        surrogate_h2_kmol_hr = float(np.clip(
+            H2_FEED_KMOL * np.clip(load_fraction, 0.0, 1.0),
+            PLANT_BOUNDS.F_H2_min,
+            PLANT_BOUNDS.F_H2_max,
+        ))
+        base_meoh_tph = self.predict_methanol_output(
+            surrogate_h2_kmol_hr, T_C, P_bar
+        )
+        throughput_scale = h2_kmol_hr / max(surrogate_h2_kmol_hr, 1e-6)
+        meoh_tph = float(max(base_meoh_tph * throughput_scale, 0.0))
         elec_mw = self.predict_energy_consumption(load_fraction)
         return h2_kg_hr, meoh_tph, elec_mw
 

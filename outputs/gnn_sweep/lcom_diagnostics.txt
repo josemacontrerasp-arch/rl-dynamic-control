@@ -1,0 +1,7 @@
+TAC          n=300  mean=+7.738e+07  std=2.049e+06  range=16.4%  skew=-0.96  outliers(|z|>3)=2
+carbon_eff   n=300  mean=+0.6258  std=0.06403  range=57.7%  skew=-1.17  outliers(|z|>3)=3
+LCOM         n=300  mean=+1002  std=46.62  range=26.2%  skew=+0.82  outliers(|z|>3)=2
+TAC          R²=+0.9915  MAE=1.494e+05  MAE%mean=0.19%
+carbon_eff   R²=+0.8990  MAE=0.01505  MAE%mean=2.40%
+LCOM         R²=+0.2487  MAE=33.21  MAE%mean=3.31%
+TAC-LCOM correlation r=-0.239

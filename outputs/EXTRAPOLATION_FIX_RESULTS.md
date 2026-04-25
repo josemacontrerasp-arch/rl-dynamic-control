@@ -23,7 +23,38 @@ The state-space coverage plot reveals the root cause: the original SAC concentra
 | **(a)** v2 surrogates | Retrained SAC, wider domain, no penalty | 2880.70 | 39.83 | 83.6% | **0.0%** | +480% |
 | **(b)** v1 + var. penalty | Retrained SAC, penalty on original surrogates | 3200.83 | 50.55 | 93.5% | **83.6%** | +544% |
 | **(c)** v2 + var. penalty | Both fixes combined | 2915.58 | 35.82 | 84.8% | **0.0%** | +487% |
+| **(gnn)** v2 + GNN σ-penalty | SAC with edge-state GNN confidence penalty | 719.94 | 590.09 | 80.8% | 0.15% | +45% |
 | Full-load baseline | Constant 100% load, nominal T/P | 496.71 | 821.23 | 93.8% | 0.0% | — |
+
+### v3 surrogates (Apr 2026 follow-up)
+
+Surrogates v3 extend the LCOM and utility GPRs with 500 fresh LHS
+points spanning `F_H2 ∈ [800, 3200]` (v1 range: `[2515, 3147]`;
+`models/retrain_surrogates.py --build-v3`). Held-out fits are clean:
+R²_LCOM = 0.99981, R²_util = 0.99936 (`outputs/surrogate_v3/summary.json`).
+Scoring the Fix (c) policy on v3 without retraining yields mean reward
+**−161.6 ± 6.4** at 0 % extrapolation: the honest LCOM surface makes
+the policy's low-load / high-T operating point economically unviable.
+71.4 % of the agent's visited F_H2 sits below v1's old lower bound,
+which means v3 is the first surrogate revision that can score the
+policy *without silent clipping* — but it also needs a fresh SAC
+trained against it. Fix (c) @ v2 remains the definitive deployable
+policy pending that v3-trained SAC.
+
+### GNN uncertainty-penalty variant (variant_gnn)
+
+`scripts/train_gnn_penalty_sac.py` trains a SAC variant on v2
+surrogates with the edge-state GNN confidence term
+`−β · max(0, σ_GNN − threshold)` (β=2, threshold=1e-3, MC dropout
+p=0.05, 4 samples, max_penalty=10). After 500 k steps the agent
+converges at mean reward 720 ± 590, vs 2916 ± 36 for Fix (c). The
+mean GNN penalty (0.36 per step) is an order of magnitude above the
+extrapolation rate that Fix (c) already suppresses, so β · σ_GNN acts
+as a near-constant negative shaping term that the policy cannot cancel
+without sacrificing profit. This is a clean demonstration that a
+learned-confidence penalty is redundant when the underlying
+domain-coverage problem has already been fixed by wider surrogates.
+Kept in the report as a negative-result reference.
 
 ### Key Findings
 

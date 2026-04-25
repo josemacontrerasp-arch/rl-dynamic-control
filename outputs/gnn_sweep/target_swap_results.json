@@ -1,0 +1,20 @@
+{
+  "experiment": "target_swap",
+  "config": {
+    "hidden_dim": 64,
+    "n_layers": 2,
+    "dropout": 0.0
+  },
+  "best_val_loss": 0.21885308186213176,
+  "final_epoch": 195,
+  "wall_time_s": 408.07395970000005,
+  "n_pred_prod_nonpositive": 0,
+  "test_r2_TAC": 0.9945426685785931,
+  "test_mae_TAC": 118272.08,
+  "test_r2_carbon_eff": 0.8962819112206333,
+  "test_mae_carbon_eff": 0.015258235037326812,
+  "test_r2_production": 0.5153624816539861,
+  "test_mae_production": 2533.939642478403,
+  "test_r2_LCOM_derived": 0.2103875970739817,
+  "test_mae_LCOM_derived": 33.663244832356774
+}

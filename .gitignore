@@ -9,5 +9,15 @@ build/
 .env
 .venv
 venv/
+.pytest_cache/
 *.log
+*.log.*
 .DS_Store
+
+# Local training noise
+tb_logs/
+outputs/**/tb/
+outputs/**/models/
+outputs/overnight_logs/
+outputs/pareto_smoke/
+saved_models/*_checkpoints/

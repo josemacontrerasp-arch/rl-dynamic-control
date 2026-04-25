@@ -14,10 +14,17 @@ Trains SAC under three configurations to isolate the effect of each fix:
 Also evaluates the ORIGINAL SAC agent on v2 surrogates to check whether
 the old policy still looks good under the improved model.
 
+Optionally, ``--include-gnn`` trains a fourth SAC variant with the
+edge-state GNN uncertainty penalty and prints its extrapolation and reward
+stability deltas versus Fix (c).
+
 Usage::
 
     python -m rl_dynamic_control.scripts.retrain_with_fixes \\
         --timesteps 500000 --eval-episodes 20
+
+    python -m rl_dynamic_control.scripts.retrain_with_fixes \\
+        --timesteps 500000 --eval-episodes 20 --include-gnn
 
 Run from the EURECHA root directory.
 """
@@ -47,6 +54,7 @@ from rl_dynamic_control.environment.methanol_plant_env import MethanolPlantEnv
 from rl_dynamic_control.models.surrogate_manager import load_surrogates
 from rl_dynamic_control.agents.sb3_agent import make_sb3_agent, train_sb3
 from rl_dynamic_control.utils.variance_penalty import VariancePenaltyConfig
+from rl_dynamic_control.utils.gnn_confidence import GNNPenaltyConfig
 
 LOGGER = logging.getLogger("retrain_with_fixes")
 
@@ -75,6 +83,8 @@ def make_env(
     surrogate_version: str = "v1",
     use_variance_penalty: bool = False,
     variance_penalty_config: Optional[VariancePenaltyConfig] = None,
+    use_gnn_penalty: bool = False,
+    gnn_penalty_config: Optional[GNNPenaltyConfig] = None,
 ) -> MethanolPlantEnv:
     """Create an environment with specified surrogate version and penalty."""
     surrogates = load_surrogates(version=surrogate_version)
@@ -84,6 +94,8 @@ def make_env(
         episode_length=RL_CFG.episode_length,
         use_variance_penalty=use_variance_penalty,
         variance_penalty_config=variance_penalty_config,
+        use_gnn_penalty=use_gnn_penalty,
+        gnn_penalty_config=gnn_penalty_config,
     )
 
 
@@ -93,6 +105,8 @@ def evaluate_agent(
     surrogate_version: str,
     use_variance_penalty: bool,
     var_config: Optional[VariancePenaltyConfig],
+    use_gnn_penalty: bool = False,
+    gnn_config: Optional[GNNPenaltyConfig] = None,
     n_episodes: int = 20,
     seed: int = RL_CFG.seed,
     is_rl: bool = True,
@@ -108,7 +122,14 @@ def evaluate_agent(
     all_step_data: List[Dict[str, float]] = []
 
     for ep in range(n_episodes):
-        env = make_env(prices, surrogate_version, use_variance_penalty, var_config)
+        env = make_env(
+            prices,
+            surrogate_version,
+            use_variance_penalty,
+            var_config,
+            use_gnn_penalty,
+            gnn_config,
+        )
         obs, _ = env.reset(seed=seed + ep)
         ep_reward = 0.0
 
@@ -131,6 +152,9 @@ def evaluate_agent(
                 "reward_before_penalty": info.get("reward_before_penalty", r),
                 "gpr_sigma": info.get("gpr_sigma", 0.0),
                 "variance_penalty": info.get("variance_penalty", 0.0),
+                "gnn_uncertainty": info.get("gnn_uncertainty", 0.0),
+                "gnn_confidence": info.get("gnn_confidence", 1.0),
+                "gnn_penalty": info.get("gnn_penalty", 0.0),
                 "load": info.get("state", {}).get("load", 0.0),
                 "T": info.get("state", {}).get("T", 0.0),
                 "P": info.get("state", {}).get("P", 0.0),
@@ -153,6 +177,12 @@ def evaluate_agent(
         "std_extrap_frac": float(np.std(extrps)),
         "episode_rewards": totals,
         "step_data": all_step_data,
+        "mean_gnn_uncertainty": float(np.mean([
+            row["gnn_uncertainty"] for row in all_step_data
+        ])) if all_step_data else 0.0,
+        "mean_gnn_penalty": float(np.mean([
+            row["gnn_penalty"] for row in all_step_data
+        ])) if all_step_data else 0.0,
     }
 
 
@@ -168,6 +198,16 @@ def main(argv=None) -> int:
     parser.add_argument("--seed", type=int, default=RL_CFG.seed)
     parser.add_argument("--alpha", type=float, default=2.0,
                         help="Variance penalty alpha coefficient")
+    parser.add_argument("--include-gnn", action="store_true",
+                        help="Also train/evaluate SAC with edge-state GNN uncertainty penalty")
+    parser.add_argument("--gnn-beta", type=float, default=2.0,
+                        help="GNN uncertainty penalty beta coefficient")
+    parser.add_argument("--gnn-threshold", type=float, default=1e-3,
+                        help="Penalty threshold for mean normalised GNN predictive variance")
+    parser.add_argument("--gnn-mc-samples", type=int, default=4,
+                        help="Stochastic edge-state GNN forward passes per environment step")
+    parser.add_argument("--gnn-dropout-p", type=float, default=0.05,
+                        help="Dropout probability used for stochastic GNN inference")
     parser.add_argument("--skip-training", action="store_true",
                         help="Only evaluate existing models (if saved)")
     parser.add_argument("--verbose", "-v", action="store_true")
@@ -185,6 +225,13 @@ def main(argv=None) -> int:
         alpha=args.alpha,
         sigma_threshold_mult=2.0,
         enabled=True,
+    )
+    gnn_config = GNNPenaltyConfig(
+        beta=args.gnn_beta,
+        threshold=args.gnn_threshold,
+        enabled=True,
+        mc_samples=args.gnn_mc_samples,
+        dropout_p=args.gnn_dropout_p,
     )
 
     # TensorBoard dir
@@ -271,6 +318,46 @@ def main(argv=None) -> int:
     print(f"  Extrap frac: {results['variant_c']['mean_extrap_frac']:.2%}")
 
     # ------------------------------------------------------------------
+    # GNN variant: v2 surrogates, WITH edge-state GNN uncertainty penalty
+    # ------------------------------------------------------------------
+    if args.include_gnn:
+        print("\n" + "=" * 60)
+        print("GNN variant: v2 surrogates, WITH edge-state GNN penalty")
+        print("=" * 60)
+        print(f"  beta={gnn_config.beta}  threshold={gnn_config.threshold}  "
+              f"mc_samples={gnn_config.mc_samples}  dropout_p={gnn_config.dropout_p}")
+
+        save_path_gnn = _SAVED / "sac_gnn_penalty"
+        if not args.skip_training:
+            env_gnn = make_env(
+                prices,
+                "v2",
+                False,
+                None,
+                True,
+                gnn_config,
+            )
+            model_gnn = make_sb3_agent(env_gnn, algo="SAC", seed=args.seed,
+                                       tb_log_dir=tb_dir)
+            train_sb3(model_gnn, total_timesteps=args.timesteps,
+                      save_path=save_path_gnn, tb_log_name="SAC_gnn_penalty")
+        else:
+            from stable_baselines3 import SAC
+            model_gnn = SAC.load(str(save_path_gnn))
+
+        results["variant_gnn"] = evaluate_agent(
+            model_gnn, prices, "v2", False, None,
+            use_gnn_penalty=True,
+            gnn_config=gnn_config,
+            n_episodes=args.eval_episodes,
+            seed=args.seed,
+        )
+        print(f"  Mean reward: {results['variant_gnn']['mean_reward']:.3f} "
+              f"± {results['variant_gnn']['std_reward']:.3f}")
+        print(f"  Extrap frac: {results['variant_gnn']['mean_extrap_frac']:.2%}")
+        print(f"  Mean GNN uncertainty: {results['variant_gnn']['mean_gnn_uncertainty']:.6f}")
+
+    # ------------------------------------------------------------------
     # Original SAC on v1 (reference)
     # ------------------------------------------------------------------
     print("\n" + "=" * 60)
@@ -329,6 +416,8 @@ def main(argv=None) -> int:
             "mean_co2_util": res["mean_co2_util"],
             "mean_extrap_frac": res["mean_extrap_frac"],
             "std_extrap_frac": res.get("std_extrap_frac", 0.0),
+            "mean_gnn_uncertainty": res.get("mean_gnn_uncertainty", 0.0),
+            "mean_gnn_penalty": res.get("mean_gnn_penalty", 0.0),
         })
     df = pd.DataFrame(rows)
     csv_path = _OUT_DIR / "extrapolation_fix_results.csv"
@@ -354,6 +443,16 @@ def main(argv=None) -> int:
         print(f"  {r['variant']:23s} {r['mean_reward']:12.3f} {r['std_reward']:8.3f} "
               f"{r['mean_co2_util']:10.3f} {100*r['mean_extrap_frac']:9.2f}%")
     print("=" * 78)
+    if "variant_c" in results and "variant_gnn" in results:
+        c = results["variant_c"]
+        g = results["variant_gnn"]
+        delta_extrap_pp = 100.0 * (g["mean_extrap_frac"] - c["mean_extrap_frac"])
+        delta_std = g["std_reward"] - c["std_reward"]
+        delta_mean = g["mean_reward"] - c["mean_reward"]
+        print("\nGNN penalty vs Fix (c):")
+        print(f"  Δ mean reward:        {delta_mean:+.3f}")
+        print(f"  Δ reward std:         {delta_std:+.3f}")
+        print(f"  Δ extrapolation rate: {delta_extrap_pp:+.2f} percentage points")
     print(f"\nResults saved to: {_OUT_DIR}")
     print(f"  Summary CSV:   {csv_path}")
     print(f"  Step-level data: {_OUT_DIR}/step_data_*.csv")

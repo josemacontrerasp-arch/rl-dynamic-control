@@ -29,6 +29,12 @@ import sys
 from pathlib import Path
 from typing import Dict, List, Optional
 
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except (AttributeError, OSError):
+    pass
+
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -66,6 +72,7 @@ COLOURS = {
     "variant_a": "#2a9d8f",
     "variant_b": "#457b9d",
     "variant_c": "#264653",
+    "variant_gnn": "#7b2cbf",
     "baseline": "#adb5bd",
 }
 
@@ -75,6 +82,7 @@ LABELS = {
     "variant_a": "(a) v2 surrogates",
     "variant_b": "(b) v1 + var. penalty",
     "variant_c": "(c) v2 + var. penalty",
+    "variant_gnn": "v2 + edge-state GNN penalty",
     "baseline": "Full-load baseline",
 }
 
@@ -157,7 +165,7 @@ def plot_sigma_vs_reward(save_dir: Path) -> None:
     """Scatter plot of GPR σ vs reward per timestep, coloured by variant."""
     fig, ax = plt.subplots(figsize=(9, 5.5))
 
-    plot_order = ["original_v1", "variant_a", "variant_b", "variant_c"]
+    plot_order = ["original_v1", "variant_a", "variant_b", "variant_c", "variant_gnn"]
     max_points = 2000  # subsample for readability
 
     for name in plot_order:
@@ -215,7 +223,7 @@ def plot_state_space_coverage(save_dir: Path) -> None:
 
     fig, axes = plt.subplots(1, 3, figsize=(16, 5))
 
-    variant_order = ["original_v1", "variant_c"]
+    variant_order = ["original_v1", "variant_c", "variant_gnn"]
 
     for ax_idx, (x_col, y_col, x_label, y_label, x_lhs, y_lhs) in enumerate(projections):
         ax = axes[ax_idx]

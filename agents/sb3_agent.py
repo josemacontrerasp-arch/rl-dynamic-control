@@ -1,18 +1,46 @@
 """
 Stable-Baselines3 Agent Wrapper
-================================
-Convenience functions for training PPO and SAC on the methanol-plant
-environment, with TensorBoard logging and model comparison.
+===============================
+Convenience helpers for training PPO and SAC on the methanol plant.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, Optional, Type
-
-import numpy as np
+from typing import Any, Callable, Dict, Optional, Type
 
 from ..config import RL_CFG
+
+
+def maybe_make_vec_env(
+    env: Any | None = None,
+    env_factory: Optional[Callable[[], Any]] = None,
+    *,
+    normalize: bool = False,
+    training: bool = True,
+) -> Any:
+    """Wrap an environment in SB3 vectorized helpers."""
+    from stable_baselines3.common.monitor import Monitor
+    from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
+
+    if env is None and env_factory is None:
+        raise ValueError("Provide either env or env_factory.")
+
+    if env_factory is None:
+        env_factory = lambda: env
+
+    vec_env = DummyVecEnv([lambda: Monitor(env_factory())])
+    if not normalize:
+        return vec_env
+
+    return VecNormalize(
+        vec_env,
+        norm_obs=True,
+        norm_reward=training,
+        clip_obs=RL_CFG.vecnorm_clip_obs,
+        gamma=RL_CFG.gamma,
+        training=training,
+    )
 
 
 def make_sb3_agent(
@@ -24,26 +52,7 @@ def make_sb3_agent(
     tb_log_dir: str = RL_CFG.tb_log_dir,
     **kwargs: Any,
 ) -> Any:
-    """Create an SB3 agent (PPO or SAC) for the given environment.
-
-    Parameters
-    ----------
-    env : gymnasium.Env
-        Must have a continuous (Box) action space.
-    algo : str
-        ``"PPO"`` or ``"SAC"``.
-    learning_rate : float
-    gamma : float
-    seed : int
-    tb_log_dir : str
-        TensorBoard log directory.
-    **kwargs
-        Extra arguments forwarded to the SB3 algorithm constructor.
-
-    Returns
-    -------
-    stable_baselines3.common.base_class.BaseAlgorithm
-    """
+    """Create an SB3 agent (PPO or SAC) for the given environment."""
     from stable_baselines3 import PPO, SAC
 
     algo_map: Dict[str, Type] = {"PPO": PPO, "SAC": SAC}
@@ -51,8 +60,7 @@ def make_sb3_agent(
     if algo_upper not in algo_map:
         raise ValueError(f"Unsupported algorithm: {algo!r}. Choose 'PPO' or 'SAC'.")
 
-    AlgoCls = algo_map[algo_upper]
-
+    algo_cls = algo_map[algo_upper]
     common_kwargs: Dict[str, Any] = dict(
         policy="MlpPolicy",
         env=env,
@@ -63,21 +71,20 @@ def make_sb3_agent(
         tensorboard_log=tb_log_dir,
     )
 
-    # Algorithm-specific defaults
     if algo_upper == "PPO":
-        common_kwargs.setdefault("n_steps", 2048)
-        common_kwargs.setdefault("batch_size", 64)
-        common_kwargs.setdefault("n_epochs", 10)
-        common_kwargs.setdefault("clip_range", 0.2)
+        common_kwargs.setdefault("n_steps", RL_CFG.ppo_n_steps)
+        common_kwargs.setdefault("batch_size", RL_CFG.ppo_batch_size)
+        common_kwargs.setdefault("n_epochs", RL_CFG.ppo_n_epochs)
+        common_kwargs.setdefault("clip_range", RL_CFG.ppo_clip_range)
     elif algo_upper == "SAC":
-        common_kwargs.setdefault("batch_size", 256)
-        common_kwargs.setdefault("buffer_size", 100_000)
-        common_kwargs.setdefault("learning_starts", 1000)
-        common_kwargs.setdefault("tau", 0.005)
+        common_kwargs.setdefault("batch_size", RL_CFG.sac_batch_size)
+        common_kwargs.setdefault("buffer_size", RL_CFG.sac_buffer_size)
+        common_kwargs.setdefault("learning_starts", RL_CFG.sac_learning_starts)
+        common_kwargs.setdefault("tau", RL_CFG.sac_tau)
 
     common_kwargs.update(kwargs)
-    model = AlgoCls(**common_kwargs)
-    print(f"[SB3] Created {algo_upper} agent  (lr={learning_rate}, γ={gamma})")
+    model = algo_cls(**common_kwargs)
+    print(f"[SB3] Created {algo_upper} agent (lr={learning_rate}, gamma={gamma})")
     return model
 
 
@@ -86,78 +93,37 @@ def train_sb3(
     total_timesteps: int = RL_CFG.total_timesteps,
     save_path: Optional[str | Path] = None,
     tb_log_name: Optional[str] = None,
+    vecnormalize_path: Optional[str | Path] = None,
+    checkpoint_dir: Optional[str | Path] = None,
+    checkpoint_freq: Optional[int] = None,
 ) -> Any:
-    """Train an SB3 model and optionally save it.
+    """Train an SB3 model and optionally save checkpoints and final state."""
+    from stable_baselines3.common.callbacks import CheckpointCallback
 
-    Parameters
-    ----------
-    model : BaseAlgorithm
-    total_timesteps : int
-    save_path : str or Path, optional
-        If provided, save the trained model here.
-    tb_log_name : str, optional
-        Run name for TensorBoard.
-
-    Returns
-    -------
-    model : BaseAlgorithm
-        The trained model.
-    """
     log_name = tb_log_name or model.__class__.__name__
-    model.learn(total_timesteps=total_timesteps, tb_log_name=log_name)
-    print(f"[SB3] Training complete — {total_timesteps:,} timesteps.")
+    callback = None
+    if checkpoint_dir is not None:
+        checkpoint_dir = Path(checkpoint_dir)
+        checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        callback = CheckpointCallback(
+            save_freq=max(1, int(checkpoint_freq or 50_000)),
+            save_path=str(checkpoint_dir),
+            name_prefix=log_name,
+            save_vecnormalize=vecnormalize_path is not None,
+        )
+
+    model.learn(total_timesteps=total_timesteps, tb_log_name=log_name, callback=callback)
+    print(f"[SB3] Training complete - {total_timesteps:,} timesteps.")
 
     if save_path is not None:
         save_path = Path(save_path)
         save_path.parent.mkdir(parents=True, exist_ok=True)
         model.save(str(save_path))
-        print(f"[SB3] Model saved → {save_path}")
+        if vecnormalize_path is not None and hasattr(model.env, "save"):
+            vecnormalize_path = Path(vecnormalize_path)
+            vecnormalize_path.parent.mkdir(parents=True, exist_ok=True)
+            model.env.save(str(vecnormalize_path))
+            print(f"[SB3] VecNormalize stats saved -> {vecnormalize_path}")
+        print(f"[SB3] Model saved -> {save_path}")
 
     return model
-
-
-def compare_algorithms(
-    env_factory: Any,
-    algos: tuple[str, ...] = ("PPO", "SAC"),
-    total_timesteps: int = RL_CFG.total_timesteps,
-    n_eval_episodes: int = RL_CFG.n_eval_episodes,
-    seed: int = RL_CFG.seed,
-) -> Dict[str, Dict[str, float]]:
-    """Train and evaluate multiple SB3 algorithms, returning summary stats.
-
-    Parameters
-    ----------
-    env_factory : callable
-        ``env_factory()`` should return a fresh ``MethanolPlantEnv``.
-    algos : tuple of str
-        Algorithm names to compare.
-    total_timesteps : int
-    n_eval_episodes : int
-    seed : int
-
-    Returns
-    -------
-    dict
-        ``{algo_name: {"mean_reward": ..., "std_reward": ...}}``
-    """
-    from stable_baselines3.common.evaluation import evaluate_policy
-
-    results: Dict[str, Dict[str, float]] = {}
-    for algo_name in algos:
-        print(f"\n{'='*60}")
-        print(f"Training {algo_name}  ({total_timesteps:,} steps)")
-        print(f"{'='*60}")
-
-        train_env = env_factory()
-        model = make_sb3_agent(train_env, algo=algo_name, seed=seed)
-        train_sb3(model, total_timesteps=total_timesteps,
-                  save_path=f"saved_models/{algo_name.lower()}_methanol")
-
-        eval_env = env_factory()
-        mean_r, std_r = evaluate_policy(
-            model, eval_env, n_eval_episodes=n_eval_episodes, deterministic=True
-        )
-        results[algo_name] = {"mean_reward": float(mean_r), "std_reward": float(std_r)}
-        print(f"[{algo_name}] Eval: mean={mean_r:.2f} ± {std_r:.2f}")
-
-    return results

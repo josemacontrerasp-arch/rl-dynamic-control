@@ -1,0 +1,20 @@
+{
+  "experiment": "capfactor_fix",
+  "hidden_dim": 64,
+  "n_layers": 2,
+  "dropout": 0.0,
+  "cap_range": [
+    0.93,
+    1.0
+  ],
+  "best_val_loss": 0.28660020112991336,
+  "final_epoch": 171,
+  "wall_time_s": 634.887116,
+  "test_mse_norm": 0.293582280476888,
+  "test_mae_TAC": 157900.109375,
+  "test_r2_TAC": 0.9910127772167965,
+  "test_mae_carbon_eff": 0.017470475286245346,
+  "test_r2_carbon_eff": 0.8936665579156999,
+  "test_mae_LCOM": 37.4185791015625,
+  "test_r2_LCOM": 0.37504310735552837
+}

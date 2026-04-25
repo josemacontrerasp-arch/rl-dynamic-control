@@ -120,6 +120,15 @@ class RLConfig:
     sb3_algo: str = "PPO"              # "PPO" or "SAC"
     total_timesteps: int = 500_000
     n_eval_episodes: int = 10
+    ppo_n_steps: int = 2048
+    ppo_batch_size: int = 64
+    ppo_n_epochs: int = 10
+    ppo_clip_range: float = 0.2
+    sac_batch_size: int = 256
+    sac_buffer_size: int = 100_000
+    sac_learning_starts: int = 1000
+    sac_tau: float = 0.005
+    vecnorm_clip_obs: float = 10.0
 
     # ── Q-learning discretisation ──────────────────────────────────────
     n_load_bins: int = 10              # electrolyser load [0.1 … 1.0]

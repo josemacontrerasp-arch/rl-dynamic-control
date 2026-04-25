@@ -1,0 +1,22 @@
+{
+  "version": "v3",
+  "n_original": 500,
+  "n_new": 500,
+  "n_total": 1000,
+  "f_h2_original_bounds": [
+    2515.0,
+    3147.0
+  ],
+  "f_h2_new_bounds": [
+    800.0,
+    3200.0
+  ],
+  "new_points_below_v1_lower_bound_fraction": 0.714,
+  "combined_points_below_v1_lower_bound_fraction": 0.357,
+  "metrics": {
+    "test_lcom_r2": 0.9998094187260992,
+    "test_lcom_rmse": 0.982839296417072,
+    "test_util_r2": 0.9993618979825794,
+    "test_util_rmse": 0.0011297168739477037
+  }
+}

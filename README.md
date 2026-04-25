@@ -1,225 +1,163 @@
-# RL Dynamic Control — CO₂-to-Methanol Plant
+# RL Dynamic Control for CO2-to-Methanol
 
-Reinforcement-learning framework for dynamically operating a CO₂-to-methanol
-synthesis plant in response to fluctuating electricity prices.  Part of the
-[EURECHA 2026 Process Design Contest](../README.md) project.
+This repository contains the dynamic-control work for a cement-integrated
+CO2-to-methanol process. The base EURECHA model gives the plant design and
+economics; this folder adds reinforcement learning, electricity-price data,
+surrogate checks, and evaluation scripts for hour-by-hour operation.
 
-## Context
+The core question is simple:
 
-The parent EURECHA project designs and optimises a cement-integrated
-CO₂-to-methanol process (899 kmol/hr CO₂, 270 MW PEM electrolyser,
-~213 kt/yr methanol).  The steady-state optimisation
-(`scripts/surrogate_optimization.py`) and economic analysis
-(`figures/scripts/constants.py`) provide all plant parameters.
+> Can an RL policy operate the electrolyser and reactor more profitably under
+> volatile power prices without wandering into surrogate-model blind spots?
 
-This sub-project adds **dynamic operation**: an RL agent learns to
-modulate the electrolyser load, reactor temperature, and reactor pressure
-hour-by-hour to maximise profit under volatile electricity pricing.
+The current answer is: SAC works best, PPO is a useful negative baseline, and
+uncertainty checks matter a lot.
 
-## Architecture
+## What is included
 
-```
+- A Gymnasium environment for hourly methanol-plant operation.
+- Tabular Q-learning, PPO, and SAC agents.
+- Synthetic and ENTSO-E-style electricity price loaders.
+- GPR surrogate management, including wider-domain v2/v3 variants.
+- Variance-penalised rewards for safer surrogate use.
+- A flowsheet GNN experiment for edge-state prediction.
+- Evaluation scripts, plots, trained model artifacts, and the project report.
+
+## Repository Layout
+
+```text
 rl_dynamic_control/
-├── config.py                 # imports from ../figures/scripts/constants.py
-├── environment/
-│   └── methanol_plant_env.py # Gymnasium env (continuous + discretised)
-├── agents/
-│   ├── q_learning.py         # Tabular Q-learning (ε-greedy)
-│   └── sb3_agent.py          # Stable-Baselines3 (PPO, SAC)
-├── models/
-│   └── surrogates.py         # Wraps existing simplified process model
-├── utils/
-│   └── reward.py             # Economic reward function
-├── data/
-│   └── electricity_prices.csv # 8760 h synthetic European day-ahead
-└── scripts/
-    ├── train_q_learning.py
-    ├── train_sb3.py
-    └── evaluate.py           # Compare RL vs constant-load & rule-based
+  agents/                  RL agent wrappers
+  data/                    price datasets and price-loading helpers
+  environment/             Gymnasium methanol plant environment
+  models/                  process surrogate loading/retraining
+  scripts/                 training, evaluation, plotting, diagnostics
+  utils/                   reward and uncertainty utilities
+  outputs/                 result tables and generated figures
+  report/                  paper/report source, figures, and PDF
+  saved_models/            trained policies and surrogate checkpoints
+  flowsheet_graph.py       flowsheet graph and GNN model definitions
+  stream_data.py           stream/edge data used by the GNN experiments
 ```
 
-## Quick Start
+## Setup
+
+This folder was developed inside the larger EURECHA project, where the plant
+constants live in:
+
+```text
+EURECHA/figures/scripts/constants.py
+EURECHA/scripts/surrogate_optimization.py
+```
+
+For a fresh checkout, keep this folder at `EURECHA/rl_dynamic_control` and run
+commands from the parent `EURECHA` directory.
 
 ```bash
-# From the EURECHA root directory:
+python -m venv .venv
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r rl_dynamic_control/requirements.txt
+```
 
-# 1. Train tabular Q-learning (fast, good for debugging)
+## Common Commands
+
+Train the smaller tabular baseline:
+
+```bash
 python -m rl_dynamic_control.scripts.train_q_learning --episodes 2000
+```
 
-# 2. Train PPO (deep RL, needs more compute)
+Train SAC or PPO:
+
+```bash
+python -m rl_dynamic_control.scripts.train_sb3 --algo SAC --timesteps 500000
 python -m rl_dynamic_control.scripts.train_sb3 --algo PPO --timesteps 500000
-
-# 3. Evaluate and compare against baselines
-python -m rl_dynamic_control.scripts.evaluate --agent q_learning
-python -m rl_dynamic_control.scripts.evaluate --agent ppo
-
-# TensorBoard (for SB3 runs)
-tensorboard --logdir rl_dynamic_control/tb_logs
 ```
 
-## Observation & Action Spaces
-
-**Observations** (8-dim continuous):
-electricity price, electrolyser load, H₂ buffer level,
-reactor T, reactor P, methanol rate, hour of day, day of week.
-
-**Actions** (3-dim continuous / 250-dim discrete):
-electrolyser load setpoint [0–1], reactor T [210–280 °C],
-reactor P [50–100 bar].
-
-## Reward
-
-```
-reward = methanol_revenue + CO₂_credits − electricity_cost
-         − utility_cost − ramp_penalty − constraint_penalties
-```
-
-All economic values come from the project's `constants.py`:
-e-methanol price £800/t, CO₂ credits £80/t, electrolyser 50 kWh/kg H₂,
-CAPEX £503 M, utilities from Aspen heat integration.
-
-## Extensions
-
-Three extensions build on the base framework, reusing the existing
-surrogates, reward, and environment with **no duplicated constants**:
-
-### 1. Real ENTSO-E Dutch prices
-
-* `data/fetch_entso_prices.py` — downloads 2023-2024 NL day-ahead prices
-  from the ENTSO-E Transparency Platform (requires an API token set via
-  `--token` or `ENTSOE_API_TOKEN`).  If no token is available, falls
-  back to a deterministic synthetic series calibrated to the 2023-24
-  NL statistics (mean ≈ €65/MWh, ~2–3 % negative-price hours, 12–48 h
-  sustained wind troughs < €20, bank-holiday dips, winter/summer
-  seasonality).
-* `data/price_loader.py` — auto-discovers all CSVs in `data/` and
-  exposes them as named datasets (`synthetic_gb`, `real_gb`,
-  `entso_nl_all`, `entso_nl_2023`, `entso_nl_2024`) with
-  season/half/date/month splits for robustness testing.
-* The environment now accepts `price_dataset="entso_nl_all"` on init —
-  no other code changes are needed to switch markets.
-* `scripts/train_on_entso.py` — retrains SAC, PPO, and Q-learning on
-  the NL data (saves `*_methanol_nl.*` separately from the originals).
-* `scripts/transfer_evaluation.py` — cross-market evaluation: does a
-  GB-trained agent transfer to NL, and vice versa?
+Evaluate policies:
 
 ```bash
-python -m rl_dynamic_control.data.fetch_entso_prices --synthetic
-python -m rl_dynamic_control.scripts.train_on_entso --algos SAC PPO Q
-python -m rl_dynamic_control.scripts.transfer_evaluation --episodes 20
-```
-
-### 2. Multi-objective Pareto sweep
-
-The reward has been generalised to
-`R = λ_profit · profit + λ_co2 · co2_utilisation`, with
-`co2_utilisation` = fraction of fresh CO₂ (`CO2_FEED_TPH` from
-`constants.py`) converted to methanol per step — reusing the same
-conversion logic the epsilon-constraint sweep in
-`EURECHA/scripts/surrogate_optimization.py` uses.
-
-* `scripts/pareto_sweep.py` — trains a fresh SAC agent for each
-  λ ∈ {0, …, 1} (8–10 points), evaluates 20 episodes per point, records
-  mean/std of profit and CO₂ utilisation.
-* `scripts/plot_pareto.py` — produces the Pareto front and
-  trade-off curves with the rule-based / full-load baselines overlaid.
-  Output: `outputs/pareto/*.png`.
-
-```bash
-python -m rl_dynamic_control.scripts.pareto_sweep --n-weights 9 --steps 60000
-python -m rl_dynamic_control.scripts.plot_pareto
-```
-
-### 3. Robustness testing
-
-* `scripts/robustness_test.py` — temporal folds built via
-  `PriceLoader.split()`:
-  * H1 ↔ H2 (Q1+Q2 vs Q3+Q4, both directions),
-  * leave-one-season-out (4 folds).
-
-  For each fold we record retrained-SAC reward, **zero-shot transfer**
-  reward from the original GB SAC, and the constant full-load
-  baseline.  Each evaluation also reports the fraction of steps where
-  the **GPR predictive std exceeds 2× the mean training-set std** —
-  the new extrapolation-warning system built into
-  `environment.methanol_plant_env` via
-  `PlantSurrogates.flag_extrapolation()`.  A high fraction flags that
-  the policy is exploiting regions where the surrogates are
-  unreliable.
-* `scripts/plot_robustness.py` — bar/box/heatmap plots +
-  seasonal-breakdown chart in `outputs/robustness/`.
-
-```bash
-python -m rl_dynamic_control.scripts.robustness_test --steps 60000 --episodes 20
-python -m rl_dynamic_control.scripts.plot_robustness
-```
-
-### 4. GPR Extrapolation Fix
-
-The trained SAC agent operates in regions where the original 500-point
-LHS surrogates are unreliable: 72-98% of evaluation steps trigger GPR
-extrapolation warnings (predictive sigma > 2x training-set mean).
-Absolute profit numbers are optimistic; relative rankings are robust.
-
-Two complementary fixes address this:
-
-**Approach A — Wider-domain surrogates (v2)**
-
-* `models/retrain_surrogates.py` — collects agent trajectories, analyses
-  the domain gap, generates 200-500 new LHS points biased toward the
-  agent's operating region, and retrains GPR surrogates on the combined
-  dataset.
-* `models/surrogate_manager.py` — version-aware loader:
-  `load_surrogates(version="v1")` or `load_surrogates(version="v2")`.
-  The environment auto-selects v2 when available.
-* **Limitation**: new points are pseudo-labelled by the simplified
-  process model, not Aspen.  The surface is smoothed but systematic
-  bias cannot be corrected without new Aspen runs.
-
-**Approach B — Variance-penalised reward**
-
-* `utils/variance_penalty.py` — modifies the reward:
-  `R_safe = R_base - alpha * max(0, sigma_gpr - sigma_threshold)`
-  where alpha is configurable and sigma_threshold = 2x mean training
-  sigma.  The penalty steers the agent away from high-uncertainty
-  regions during training.
-* The environment accepts `use_variance_penalty=True` (off by default
-  for backward compatibility).
-
-**Retraining experiment**
-
-Three SAC variants are trained to isolate each fix:
-
-| Variant | Surrogates | Penalty | Purpose                    |
-|---------|-----------|---------|----------------------------|
-| (a)     | v2        | No      | Wider domain alone         |
-| (b)     | v1        | Yes     | Penalty alone              |
-| (c)     | v2        | Yes     | Both fixes combined        |
-
-```bash
-# Step 1: Retrain surrogates (Approach A)
-python -m rl_dynamic_control.models.retrain_surrogates --episodes 50 --new-points 300
-
-# Step 2: Train fix variants
-python -m rl_dynamic_control.scripts.retrain_with_fixes --timesteps 500000
-
-# Step 3: Plot results
-python -m rl_dynamic_control.scripts.plot_extrapolation_fix
-
-# Step 4: Full summary across all agents and price datasets
+python -m rl_dynamic_control.scripts.evaluate --agent sac
 python -m rl_dynamic_control.scripts.final_summary --episodes 20
 ```
 
-Output: `outputs/extrapolation_fix/` (CSVs, PNGs) and
-`outputs/final_summary.csv` (definitive results table).
+Run the extrapolation-fix comparison:
+
+```bash
+python -m rl_dynamic_control.models.retrain_surrogates --episodes 50 --new-points 300
+python -m rl_dynamic_control.scripts.retrain_with_fixes --timesteps 500000
+python -m rl_dynamic_control.scripts.plot_extrapolation_fix
+```
+
+Run the GNN diagnostics:
+
+```bash
+cd rl_dynamic_control
+python scripts/train_gnn_sweep.py --smoke
+python scripts/train_gnn_edge_state.py --smoke
+python scripts/diagnose_lcom.py
+```
+
+Generate Aspen validation centroids:
+
+```bash
+python -m rl_dynamic_control.scripts.generate_aspen_validation_points --n-centroids 20 --seed 42
+```
+
+## Main Results
+
+The detailed tables live in `outputs/` and the write-up is in `report/`. The
+short version:
+
+- SAC is the strongest RL policy in this environment.
+- The v2 surrogate plus variance-penalised SAC policy is the current best
+  deployable result: mean reward around 2916, CO2 utilisation around 0.85, and
+  near-zero GPR extrapolation warnings in the evaluation runs.
+- PPO remained close to a constant-action policy after several tuning attempts
+  (`n_steps`, lower learning rate, more epochs, VecNormalize, and a combined
+  setup). It is kept as a negative baseline rather than presented as a final
+  controller.
+- A graph-level GNN was not a good fit for direct KPI prediction, especially
+  LCOM. Reframing the problem as per-edge physical-state prediction worked much
+  better: the edge-state model reached mean R2 about 0.997 across the 13 edges
+  and 8 physical stream features.
+- Adding a GNN uncertainty penalty to the RL reward did not improve on the
+  variance-penalised SAC controller. The penalty made rewards lower and noisier
+  in the tested configuration.
+- The profit-vs-CO2-utilisation Pareto sweep is nearly flat because CO2
+  utilisation saturates. A second sweep using electricity consumption was also
+  mostly degenerate because electricity cost is already embedded in profit.
+- The Aspen validation point generator is in place. The actual Aspen runs and a
+  future Aspen-labelled v4 refit are still open work.
+
+## Important Files
+
+```text
+outputs/extrapolation_fix/extrapolation_fix_results.csv
+outputs/ppo_fix_results.csv
+outputs/pareto_v2/pareto_results.csv
+outputs/gnn_sweep/edge_state_results.csv
+outputs/surrogate_v3/summary.json
+outputs/aspen_validation/validation_points.csv
+report/rl_dynamic_control_report.pdf
+```
+
+## Notes on Reproducibility
+
+- The committed outputs are the record of the runs used in the report.
+- TensorBoard logs, raw checkpoint folders, and local cache files are ignored.
+- Large final model artifacts are kept only when they are needed to reproduce a
+  reported result.
+- The v3 surrogate extends the H2-flow domain, but the existing v2-trained SAC
+  policy should not be treated as validated outside the regions checked in the
+  report.
 
 ## Roadmap
 
-1. ✅ Tabular Q-learning on discretised env
-2. ✅ PPO / SAC via Stable-Baselines3
-3. ✅ GPR extrapolation fix (wider surrogates + variance penalty)
-4. 🔲 Plug in real Aspen-generated training data for v3 surrogates
-5. 🔲 Aspen COM automation loop (live simulation in the RL step)
-6. 🔲 Multi-agent: separate agents for electrolyser and reactor
-7. 🔲 Stochastic price forecasting as additional observation
+- Run the 20 Aspen validation cases exported in
+  `outputs/aspen_validation/validation_points.csv`.
+- Refit the next surrogate version on Aspen-labelled low-load points.
+- Retrain SAC directly against the wider validated surrogate surface.
+- Add a tighter uncertainty gate if the GNN confidence term is revisited.
+- Keep PPO in the report as a baseline unless a different policy formulation
+  breaks the collapse.

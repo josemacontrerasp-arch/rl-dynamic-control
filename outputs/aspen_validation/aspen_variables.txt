@@ -1,0 +1,29 @@
+# Aspen Plus validation variable list
+# -----------------------------------
+# Set each of the following Aspen Plus manipulated variables per
+# centroid in validation_points.csv, then record the resulting KPIs
+# for comparison against the v2/v3 GPR surrogates.
+#
+# Aspen Plus block names follow the base-case flowsheet in
+# aspenfiles/; they correspond to the nodes in
+# rl_dynamic_control.flowsheet_graph.FlowsheetGraph.
+#
+# Manipulated variables
+#   PEM.FEED-RATE           = F_H2_kmolhr        (kmol/hr)
+#   PEM.CAPACITY-FACTOR     = electrolyser_load   (--)
+#   REACT.TEMP              = reactor_T_C         (deg C)
+#   REACT.PRES              = reactor_P_bar       (bar)
+#
+# Quantities to record (per centroid run)
+#   Levelised cost of methanol    LCOM           (GBP/t)
+#   Total annualised cost          TAC            (GBP/yr)
+#   Specific utility consumption   util_per_tMeOH (kWh/t)
+#   Specific methanol yield        meoh_tph       (t/hr)
+#   Carbon efficiency              carbon_eff     (mol MeOH / mol CO2)
+#   Recycle-loop CO2 mole fraction x_CO2_recycle  (--)
+#
+# Suggested Aspen export: one .bkp per centroid named
+#   aspen_validation_points_<centroid_id>.bkp
+# or a sensitivity study driven by validation_points.csv inside a
+# single .bkp. Record results in a companion .xlsx so surrogate
+# parity plots can be generated automatically.
